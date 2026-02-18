@@ -1,0 +1,23 @@
+# Ignore Python cache files
+__pycache__/
+*.py[cod]
+
+# Ignore other common Python artifacts
+*.pyo
+*.pyd
+*.pyd
+*.pdb
+*.egg-info/
+*.eggs/
+*.log
+*.pot
+*.mo
+*.pyc
+*.pyo
+*.pyd
+*.pdb
+*.egg-info/
+*.eggs/
+*.log
+*.pot
+*.mo
