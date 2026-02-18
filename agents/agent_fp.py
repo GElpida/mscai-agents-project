@@ -173,3 +173,7 @@ class FictitousPlayAgent:
     def get_history(self) -> Tuple[list, list]:
         """Get the play history of both agent and opponent."""
         return self.play_history.copy(), self.opponent_history.copy()
+
+
+# Backwards/typo-compatible alias (more conventional spelling)
+FictitiousPlayAgent = FictitousPlayAgent

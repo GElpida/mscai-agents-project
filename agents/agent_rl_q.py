@@ -1,4 +1,4 @@
-# agents/independent_q.py
+# agents/agent_rl_q.py
 from __future__ import annotations
 import numpy as np
 

@@ -19,8 +19,23 @@ from agents.agent_fp import FictitousPlayAgent
 from games import MatchingPennies, PrisonersDilemma, AntiCoordination, AlmostRockPaperScissors
 
 # Create results directory if it doesn't exist
-RESULTS_DIR = Path(__file__).parent.parent / "results"
-RESULTS_DIR.mkdir(exist_ok=True)
+RESULTS_DIR = Path(__file__).resolve().parents[1] / "results" / "fp_vs_fp"
+RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _make_unique_dir(parent: Path, name: str) -> Path:
+    candidate = parent / name
+    if not candidate.exists():
+        candidate.mkdir(parents=True, exist_ok=False)
+        return candidate
+
+    for i in range(1, 10_000):
+        candidate = parent / f"{name}_{i}"
+        if not candidate.exists():
+            candidate.mkdir(parents=True, exist_ok=False)
+            return candidate
+
+    raise RuntimeError(f"Could not create a unique directory under: {parent}")
 
 
 def save_report(game_class, agent1_payoffs, agent2_payoffs, agent1, agent2, num_rounds):
@@ -37,7 +52,8 @@ def save_report(game_class, agent1_payoffs, agent2_payoffs, agent1, agent2, num_
     """
     game_name = game_class.__name__
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    report_path = RESULTS_DIR / f"{game_name}_{timestamp}.txt"
+    run_dir = _make_unique_dir(RESULTS_DIR, f"{game_name}_{timestamp}")
+    report_path = run_dir / "report.txt"
     
     history1, opponent_history1 = agent1.get_history()
     history2, opponent_history2 = agent2.get_history()

@@ -1,4 +1,4 @@
-# agents/minimax_q.py
+# agents/agent_rl_minimaxq.py
 from __future__ import annotations
 import numpy as np
 

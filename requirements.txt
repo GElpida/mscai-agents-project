@@ -1,2 +1,7 @@
-numpy>=1.21.0
-matplotlib>=3.5.0
+# Core dependencies
+# Keep versions new enough to have wheels for modern Python (3.10+).
+numpy>=1.26.0
+
+# Imported by `experiments/main_fp_vs_fp.py` (even if you don't generate plots yet).
+matplotlib>=3.8.0
+

@@ -1,0 +1,8 @@
+{
+  "alpha": 0.2,
+  "eps": 0.1,
+  "gamma": 0.95,
+  "seed": 0,
+  "steps": 20000,
+  "switch_p": 0.2
+}

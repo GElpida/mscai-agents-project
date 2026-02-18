@@ -1,0 +1,13 @@
+RL vs RL experiment
+Game: StochasticSwitchingDominanceGame
+Timestamp: 2026-02-18_20-08-25
+
+alpha: 0.2
+eps: 0.1
+gamma: 0.95
+seed: 0
+steps: 20000
+switch_p: 0.2
+
+Mean reward P1: -0.061150
+Std reward  P1: 1.511691
