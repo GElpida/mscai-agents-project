@@ -1,23 +1,17 @@
-# Ignore Python cache files
+# Python cache
 __pycache__/
 *.py[cod]
+*$py.class
 
-# Ignore other common Python artifacts
-*.pyo
-*.pyd
-*.pyd
-*.pdb
-*.egg-info/
-*.eggs/
-*.log
-*.pot
-*.mo
-*.pyc
-*.pyo
-*.pyd
-*.pdb
-*.egg-info/
-*.eggs/
-*.log
-*.pot
-*.mo
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# VS Code stuff (optional but recommended)
+.vscode/
+
+# OS junk
+.DS_Store
+Thumbs.db
