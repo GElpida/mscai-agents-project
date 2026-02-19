@@ -12,6 +12,7 @@ import numpy as np
 
 CSV_COLUMNS = [
     "Round",
+    "State",
     "Agent1_Type",
     "Agent2_Type",
     "Agent1_ExpPayoff",
@@ -209,6 +210,7 @@ def write_report_txt(run_dir: Path, r: ReportInputs) -> Path:
 def build_csv_row(
     *,
     round_idx: int,
+    state: int,
     agent1_type: str,
     agent2_type: str,
     agent1_exp_payoff: float,
@@ -226,6 +228,7 @@ def build_csv_row(
 ) -> dict[str, Any]:
     return {
         "Round": int(round_idx),
+        "State": int(state),
         "Agent1_Type": agent1_type,
         "Agent2_Type": agent2_type,
         "Agent1_ExpPayoff": float(agent1_exp_payoff),

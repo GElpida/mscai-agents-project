@@ -5,3 +5,5 @@ numpy>=1.26.0
 # Imported by `experiments/main_fp_vs_fp.py` (even if you don't generate plots yet).
 matplotlib>=3.8.0
 
+# Used by `experiments/build_summary.py` to write animated GIFs for TerrainGame summaries.
+pillow>=10.0.0

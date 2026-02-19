@@ -112,6 +112,7 @@ def run_rl_vs_fp(game, steps: int, seed: int, alpha: float, gamma: float, eps: f
         csv_rows.append(
             build_csv_row(
                 round_idx=t + 1,
+                state=int(s),
                 agent1_type="IndependentQLearner",
                 agent2_type="FictitiousPlayAgent",
                 agent1_exp_payoff=exp1,

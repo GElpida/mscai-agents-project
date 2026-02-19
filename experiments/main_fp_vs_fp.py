@@ -227,6 +227,7 @@ def play_game(game, num_rounds: int = 20, verbose: bool = True, strategy_type: s
         csv_rows.append(
             build_csv_row(
                 round_idx=round_num,
+                state=int(s),
                 agent1_type="FictitiousPlayAgent",
                 agent2_type="FictitiousPlayAgent",
                 agent1_exp_payoff=exp1,

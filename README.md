@@ -55,6 +55,19 @@ Outputs:
 - `results/rl_vs_rl/<Game>_<YYYY-MM-DD_HH-MM-SS>/args.json`
 - `results/rl_vs_rl/<Game>_<YYYY-MM-DD_HH-MM-SS>/data.npz`
 
+## Building a summary (plots + metrics)
+
+To generate an aggregated folder with plots/metrics for every game across all experiments:
+
+```bash
+python experiments/build_summary.py
+```
+
+Outputs under:
+- `results/summary/README.md`
+- `results/summary/INDEX.md`
+- `results/summary/summary.csv`
+
 ## Using agents in code
 
 ```python
@@ -100,4 +113,3 @@ mscai-agents-project/
   requirements.txt
   README.md
 ```
-

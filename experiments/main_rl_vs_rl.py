@@ -100,6 +100,7 @@ def run_minimaxq_selfplay(game, steps: int, seed: int, alpha: float, gamma: floa
         csv_rows.append(
             build_csv_row(
                 round_idx=t + 1,
+                state=int(s),
                 agent1_type="MinimaxQLearner",
                 agent2_type="MinimaxQLearner",
                 agent1_exp_payoff=exp1,
@@ -218,6 +219,7 @@ def run_independentq_selfplay(game, steps: int, seed: int, alpha: float, gamma: 
         csv_rows.append(
             build_csv_row(
                 round_idx=t + 1,
+                state=int(s),
                 agent1_type="IndependentQLearner",
                 agent2_type="IndependentQLearner",
                 agent1_exp_payoff=exp1,

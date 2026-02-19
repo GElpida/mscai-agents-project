@@ -1,0 +1,5 @@
+player,action,action_label,prob
+P1,0,Cooperate,0.0
+P1,1,Defect,1.0
+P2,0,Cooperate,0.0002
+P2,1,Defect,0.9998

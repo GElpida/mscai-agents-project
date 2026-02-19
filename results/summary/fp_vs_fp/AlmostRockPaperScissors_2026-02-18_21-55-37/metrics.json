@@ -1,0 +1,22 @@
+{
+  "experiment": "fp_vs_fp",
+  "run": "AlmostRockPaperScissors_2026-02-18_21-55-37",
+  "game_name": "AlmostRockPaperScissors",
+  "game_key": "almost_rock_paper_scissors",
+  "n_rounds": 5000,
+  "window": 500,
+  "state_source": null,
+  "payoff_total_p1": 2440.0,
+  "payoff_total_p2": 2082.0,
+  "payoff_mean_p1": 0.488,
+  "payoff_mean_p2": 0.4164,
+  "entropy_p1": 1.0426375753593964,
+  "entropy_p2": 1.004734973260828,
+  "final_regret_p1": 5.602204169139544,
+  "final_regret_p2": 325.98198007750085,
+  "exploitability_kind": "NA",
+  "exploitability_final": null,
+  "t_exploit_lt_0_10": null,
+  "t_exploit_lt_0_05": null,
+  "notes": "Exploitability not defined for this game under the available payoff spec."
+}

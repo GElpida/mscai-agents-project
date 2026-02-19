@@ -1,0 +1,10 @@
+action_p1,action_p1_label,action_p2,action_p2_label,prob
+0,Rock,0,Rock,0.0294
+0,Rock,1,Paper,0.092
+0,Rock,2,Scissors,0.0622
+1,Paper,0,Rock,0.2796
+1,Paper,1,Paper,0.0358
+1,Paper,2,Scissors,0.0976
+2,Scissors,0,Rock,0.2268
+2,Scissors,1,Paper,0.1462
+2,Scissors,2,Scissors,0.0304
