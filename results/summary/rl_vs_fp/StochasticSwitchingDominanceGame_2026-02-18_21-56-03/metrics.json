@@ -16,7 +16,7 @@
   "final_regret_p2": 559.2324607472145,
   "exploitability_kind": "stochastic_weighted_over_states",
   "exploitability_final": 0.049200000000000015,
-  "t_exploit_lt_0_10": null,
-  "t_exploit_lt_0_05": null,
+  "t_exploit_lt_0_10": 110,
+  "t_exploit_lt_0_05": 449,
   "notes": null
 }

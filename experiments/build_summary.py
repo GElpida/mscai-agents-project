@@ -199,6 +199,25 @@ def _try_load_states_from_npz(run_dir: Path, expected_len: int) -> np.ndarray | 
     return states if int(states.size) == int(expected_len) else None
 
 
+def _reconstruct_switching_states(*, Tn: int, switch_p: float, seed: int) -> np.ndarray:
+    """
+    Reconstruct the per-round state sequence for StochasticSwitchingDominanceGame.
+
+    This game’s state transition depends only on RNG draws (and `switch_p`), not on actions.
+    We treat the "state at round t" as the current state *before* calling step(...),
+    matching what experiment CSVs log when they include a State column.
+    """
+    Tn = int(Tn)
+    rng = np.random.default_rng(int(seed))
+    states = np.zeros(Tn, dtype=int)
+    s = 0
+    for i in range(Tn):
+        states[i] = int(s)
+        if rng.random() < float(switch_p):
+            s = 1 - int(s)
+    return states
+
+
 def _empirical_dist(actions: np.ndarray, n_actions: int) -> np.ndarray:
     actions = np.asarray(actions, dtype=int).reshape(-1)
     if actions.size == 0:
@@ -266,6 +285,40 @@ def _try_parse_action_spaces_from_report(run_dir: Path) -> tuple[int, int] | Non
     return int(p1), int(p2)
 
 
+def _try_parse_args_from_report(run_dir: Path) -> dict[str, float]:
+    """
+    Best-effort parse of scalar args from `report.txt`.
+
+    Some older runs may not have `args.json`; the report includes lines like `seed: 0`.
+    """
+    report_path = run_dir / "report.txt"
+    if not report_path.exists():
+        return {}
+
+    out: dict[str, float] = {}
+    patterns: dict[str, re.Pattern[str]] = {
+        "seed": re.compile(r"^\s*seed:\s*(?P<v>[-+]?\d+)\s*$"),
+        "switch_p": re.compile(r"^\s*switch_p:\s*(?P<v>[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)\s*$"),
+        "terrain_n": re.compile(r"^\s*terrain_n:\s*(?P<v>[-+]?\d+)\s*$"),
+        "terrain_fog": re.compile(r"^\s*terrain_fog:\s*(?P<v>[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)\s*$"),
+        "terrain_k_diff": re.compile(r"^\s*terrain_k_diff:\s*(?P<v>[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)\s*$"),
+    }
+    try:
+        with open(report_path, "r", encoding="utf-8") as f:
+            for line in f:
+                for k, pat in patterns.items():
+                    if k in out:
+                        continue
+                    m = pat.match(line)
+                    if m:
+                        out[k] = float(m.group("v"))
+                if len(out) == len(patterns):
+                    break
+    except Exception:
+        return {}
+    return out
+
+
 def _enumerate_monotone_paths(n: int) -> list[list[tuple[int, int]]]:
     """
     All monotone (down/right) paths from (0,0) to (n-1,n-1).
@@ -329,6 +382,50 @@ def _try_load_args_json(run_dir: Path) -> dict[str, Any] | None:
     except Exception:
         return None
     return out if isinstance(out, dict) else None
+
+
+_TERRAIN_A_CACHE: dict[tuple[int, int, float, float], np.ndarray] = {}
+
+
+def _terrain_expected_payoff_matrix_p1(*, n: int, seed: int, fog: float, k_diff: float) -> np.ndarray:
+    """
+    Expected payoff matrix for TerrainGame (Player 1 = sensor placement).
+
+    We reconstruct it from run parameters to define exploitability in the summary.
+    Expected payoff matches `experiments/game_registry.py::_terrain_expected_payoff_matrix_p1`:
+      A[sensor_idx, path_idx] = 2 * p_detect_path - 1
+    """
+    n = int(n)
+    seed = int(seed)
+    fog = float(fog)
+    k_diff = float(k_diff)
+
+    cache_key = (n, seed, float(fog), float(k_diff))
+    cached = _TERRAIN_A_CACHE.get(cache_key)
+    if cached is not None:
+        return cached.copy()
+
+    heights = _default_terrain_heights(n=int(n), seed=int(seed))
+    n_cells = int(n) * int(n)
+    path_masks = _terrain_path_cell_masks(int(n))  # (n_paths, n_cells)
+    n_paths = int(path_masks.shape[0])
+
+    h_flat = np.asarray(heights, dtype=float).reshape(-1)
+    A = np.zeros((n_cells, n_paths), dtype=float)
+
+    for sensor_idx in range(n_cells):
+        hs = float(h_flat[int(sensor_idx)])
+        diff = np.abs(hs - h_flat)
+        logit = k_diff * diff - fog
+        p_cells = 1.0 / (1.0 + np.exp(-logit))
+        p_cells = np.clip(p_cells, 0.05, 0.95)
+        log_1mp = np.log(np.clip(1.0 - p_cells, 1e-12, 1.0))
+        log_p_not = path_masks @ log_1mp
+        p_detect = 1.0 - np.exp(log_p_not)
+        A[int(sensor_idx), :] = 2.0 * p_detect - 1.0
+
+    _TERRAIN_A_CACHE[cache_key] = A.copy()
+    return A
 
 
 def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
@@ -633,6 +730,22 @@ def build_summary(results_dir: Path, out_dir: Path, *, window: int) -> None:
                 states = _try_load_states_from_npz(run_dir, int(t.size))
                 if states is not None:
                     states_source = "npz"
+            if states is None and game_key == "switching_dominance":
+                args_json = _try_load_args_json(run_dir) or {}
+                if "seed" not in args_json or "switch_p" not in args_json:
+                    args_json = {**_try_parse_args_from_report(run_dir), **args_json}
+                # When runs don't log State, we can reconstruct deterministically from seed+switch_p.
+                # This is specific to StochasticSwitchingDominanceGame (state transitions are action-independent).
+                if "seed" in args_json and "switch_p" in args_json and int(t.size) > 0:
+                    try:
+                        states = _reconstruct_switching_states(
+                            Tn=int(t.size),
+                            switch_p=float(args_json["switch_p"]),
+                            seed=int(args_json["seed"]),
+                        )
+                        states_source = "reconstructed"
+                    except Exception:
+                        states = None
 
             Tn = int(t.size)
             n_actions_p1 = int(np.max(a1) + 1) if a1.size else 1
@@ -725,6 +838,23 @@ def build_summary(results_dir: Path, out_dir: Path, *, window: int) -> None:
             t_lt_01: int | None = None
             t_lt_005: int | None = None
             exploit_note: str | None = None
+            x_roll: np.ndarray | None = None
+            y_roll: np.ndarray | None = None
+
+            if game_key == "terrain_sensor" and payoff.kind == "env_no_matrix":
+                args_json = _try_load_args_json(run_dir) or {}
+                if any(k not in args_json for k in ("seed", "terrain_n", "terrain_fog", "terrain_k_diff")):
+                    args_json = {**_try_parse_args_from_report(run_dir), **args_json}
+                try:
+                    n_side = int(args_json.get("terrain_n", 0)) or int(round(math.sqrt(float(n_actions_p1))))
+                    seed = int(args_json.get("seed", 0))
+                    fog = float(args_json.get("terrain_fog", 0.25))
+                    k_diff = float(args_json.get("terrain_k_diff", 0.9))
+                    A_terrain = _terrain_expected_payoff_matrix_p1(n=n_side, seed=seed, fog=fog, k_diff=k_diff)
+                    if A_terrain.shape == (int(n_actions_p1), int(n_actions_p2)):
+                        payoff = PayoffSpec(kind="zero_sum", A=A_terrain)
+                except Exception:
+                    pass
 
             if payoff.kind == "zero_sum" and payoff.A is not None:
                 expl_kind = "zero_sum_minimax_gap"
@@ -733,6 +863,20 @@ def build_summary(results_dir: Path, out_dir: Path, *, window: int) -> None:
                 x_roll = _rolling_dists(a1, n_actions_p1, W)
                 y_roll = _rolling_dists(a2, n_actions_p2, W)
                 expl_curve = np.asarray([_exploit_zero_sum(payoff.A, x_roll[i], y_roll[i]) for i in range(Tn)], dtype=float)
+            elif game_key == "almost_rock_paper_scissors" and payoff.A is not None:
+                # Use the RPS-style definition shown in the assignment screenshot:
+                # exploitability(pi) = V* - BR(pi) = V* - min(pi^T A).
+                # For this game's payoff matrix (win=1, else=0), V* = 1/3 under the uniform equilibrium.
+                expl_kind = "rps_vstar_minus_best_response"
+                V_star = 1.0 / 3.0
+                br = float(np.min(_normalize(x_emp) @ payoff.A))
+                expl_final = float(V_star - br)
+                W = int(min(int(window), Tn)) if Tn > 0 else 1
+                x_roll = _rolling_dists(a1, n_actions_p1, W)
+                expl_curve = np.asarray(
+                    [float(V_star - float(np.min(_normalize(x_roll[i]) @ payoff.A))) for i in range(Tn)],
+                    dtype=float,
+                )
             elif payoff.kind == "general_sum" and payoff.A is not None and payoff.B is not None:
                 expl_kind = "general_sum_exploitability_sum"
                 exploit_detail = _exploit_general_sum(payoff.A, payoff.B, x_emp, y_emp)
@@ -753,6 +897,9 @@ def build_summary(results_dir: Path, out_dir: Path, *, window: int) -> None:
                     per_state_rows: list[dict[str, Any]] = []
                     total_visits = 0
                     weighted = 0.0
+                    # Also compute rolling exploitability curve for thresholds/plots (windowed over time).
+                    W = int(min(int(window), Tn)) if Tn > 0 else 1
+                    expl_curve = np.zeros(Tn, dtype=float) if Tn > 0 else np.zeros(0, dtype=float)
                     for ss in sorted(set(states.tolist())):
                         idx = np.where(states == int(ss))[0]
                         visits = int(idx.size)
@@ -771,6 +918,29 @@ def build_summary(results_dir: Path, out_dir: Path, *, window: int) -> None:
                     if total_visits > 0:
                         expl_final = weighted / float(total_visits)
                     _write_csv(out_run_dir / "per_state.csv", per_state_rows)
+
+                    # Rolling curve: for each time i, compute state-weighted exploitability on the last W rounds.
+                    if int(Tn) > 0:
+                        for i in range(Tn):
+                            end = i + 1
+                            start = max(0, end - W)
+                            st_win = states[start:end]
+                            total = int(st_win.size)
+                            if total <= 0:
+                                expl_curve[i] = float("nan")
+                                continue
+                            e_w = 0.0
+                            for ss in sorted(set(st_win.tolist())):
+                                idx_local = np.where(st_win == int(ss))[0]
+                                v = int(idx_local.size)
+                                if v <= 0:
+                                    continue
+                                idx_global = idx_local + start
+                                xs = _empirical_dist(a1[idx_global], n_actions_p1)
+                                ys = _empirical_dist(a2[idx_global], n_actions_p2)
+                                A_s = np.asarray(payoff.A_by_state[int(ss)], dtype=float)
+                                e_w += float(_exploit_zero_sum(A_s, xs, ys)) * (float(v) / float(total))
+                            expl_curve[i] = float(e_w)
             else:
                 exploit_note = "Exploitability not defined for this game under the available payoff spec."
 
@@ -779,6 +949,18 @@ def build_summary(results_dir: Path, out_dir: Path, *, window: int) -> None:
                 idx005 = np.where(expl_curve < 0.05)[0]
                 t_lt_01 = int(t[int(idx01[0])]) if idx01.size > 0 else None
                 t_lt_005 = int(t[int(idx005[0])]) if idx005.size > 0 else None
+
+            # Policy convergence (single scalar): Δt = ||π_t - π_{t-1}||_1 where π_t is the
+            # concatenation of rolling action distributions for P1 and P2 (window=W).
+            W_pol = int(min(int(window), Tn)) if Tn > 0 else 1
+            x_pol = x_roll if x_roll is not None else _rolling_dists(a1, n_actions_p1, W_pol)
+            y_pol = y_roll if y_roll is not None else _rolling_dists(a2, n_actions_p2, W_pol)
+            if int(Tn) >= 2:
+                policy_convergence = float(
+                    np.sum(np.abs(x_pol[-1] - x_pol[-2])) + np.sum(np.abs(y_pol[-1] - y_pol[-2]))
+                )
+            else:
+                policy_convergence = 0.0
 
             timeseries_rows: list[dict[str, Any]] = []
             for i in range(Tn):
@@ -892,17 +1074,17 @@ def build_summary(results_dir: Path, out_dir: Path, *, window: int) -> None:
             rows_for_global_summary.append(
                 {
                     "experiment": exp_dir.name,
-                    "run": run_dir.name,
                     "game": game_name,
                     "n_rounds": Tn,
                     "entropy_p1": float(Hx),
                     "entropy_p2": float(Hy),
-                    "final_regret_p1": final_regret_p1 if final_regret_p1 is not None else "",
-                    "final_regret_p2": final_regret_p2 if final_regret_p2 is not None else "",
-                    "exploitability_kind": expl_kind,
-                    "exploitability_final": float(expl_final) if expl_final is not None else "",
-                    "t_exploit_lt_0_10": t_lt_01 if t_lt_01 is not None else "",
-                    "t_exploit_lt_0_05": t_lt_005 if t_lt_005 is not None else "",
+                    "final_regret_p1": float(final_regret_p1) if final_regret_p1 is not None else "-",
+                    "final_regret_p2": float(final_regret_p2) if final_regret_p2 is not None else "-",
+                    "exploitability_final": float(expl_final) if expl_final is not None else "-",
+                    "t_exploit_lt_0_10": int(t_lt_01) if t_lt_01 is not None else "-",
+                    "payoff_mean_p1": float(np.mean(r1)) if r1.size else 0.0,
+                    "payoff_mean_p2": float(np.mean(r2)) if r2.size else 0.0,
+                    "policy_convergence": float(policy_convergence),
                     "out_dir": str(out_run_dir.relative_to(out_dir)).replace("\\", "/"),
                 }
             )

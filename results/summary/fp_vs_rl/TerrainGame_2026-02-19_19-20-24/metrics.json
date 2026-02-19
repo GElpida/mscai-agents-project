@@ -14,9 +14,9 @@
   "entropy_p2": 2.995271999590373,
   "final_regret_p1": 6.358222603588207,
   "final_regret_p2": 12.667809290483765,
-  "exploitability_kind": "NA",
-  "exploitability_final": null,
-  "t_exploit_lt_0_10": null,
-  "t_exploit_lt_0_05": null,
-  "notes": "Exploitability not defined for this game under the available payoff spec."
+  "exploitability_kind": "zero_sum_minimax_gap",
+  "exploitability_final": 0.003651535309986298,
+  "t_exploit_lt_0_10": 1,
+  "t_exploit_lt_0_05": 1,
+  "notes": null
 }

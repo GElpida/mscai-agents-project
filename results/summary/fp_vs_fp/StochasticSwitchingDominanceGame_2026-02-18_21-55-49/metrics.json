@@ -5,7 +5,7 @@
   "game_key": "switching_dominance",
   "n_rounds": 5000,
   "window": 500,
-  "state_source": null,
+  "state_source": "csv",
   "payoff_total_p1": -224.0,
   "payoff_total_p2": 224.0,
   "payoff_mean_p1": -0.0448,
@@ -15,8 +15,8 @@
   "final_regret_p1": 223.28255263503888,
   "final_regret_p2": 185.35490702719122,
   "exploitability_kind": "stochastic_weighted_over_states",
-  "exploitability_final": null,
-  "t_exploit_lt_0_10": null,
+  "exploitability_final": 0.0438,
+  "t_exploit_lt_0_10": 491,
   "t_exploit_lt_0_05": null,
-  "notes": "Missing per-round State column in results.csv; cannot compute per-state exploitability."
+  "notes": null
 }
