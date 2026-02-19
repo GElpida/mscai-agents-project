@@ -56,6 +56,15 @@ Auto-generated. See `README.md` in this folder for metric definitions.
 - Joint move probs (CSV): `fp_vs_fp/TerrainGame_2026-02-18_21-55-54/joint_action_probabilities.csv`
 - Plots: `fp_vs_fp/TerrainGame_2026-02-18_21-55-54/plot_payoff_running_mean.png`, `fp_vs_fp/TerrainGame_2026-02-18_21-55-54/plot_terrain_movement.gif`, `fp_vs_fp/TerrainGame_2026-02-18_21-55-54/plot_joint_action_heatmap.png`, `fp_vs_fp/TerrainGame_2026-02-18_21-55-54/plot_regret.png`
 
+## fp_vs_rl / TerrainGame_2026-02-19_19-20-24
+
+- Folder: `fp_vs_rl/TerrainGame_2026-02-19_19-20-24`
+- Metrics: `fp_vs_rl/TerrainGame_2026-02-19_19-20-24/metrics.json`
+- Empirical strategies: `fp_vs_rl/TerrainGame_2026-02-19_19-20-24/empirical_strategies.csv`
+- Action probs (CSV): `fp_vs_rl/TerrainGame_2026-02-19_19-20-24/action_probabilities.csv`
+- Joint move probs (CSV): `fp_vs_rl/TerrainGame_2026-02-19_19-20-24/joint_action_probabilities.csv`
+- Plots: `fp_vs_rl/TerrainGame_2026-02-19_19-20-24/plot_payoff_running_mean.png`, `fp_vs_rl/TerrainGame_2026-02-19_19-20-24/plot_terrain_movement.gif`, `fp_vs_rl/TerrainGame_2026-02-19_19-20-24/plot_joint_action_heatmap.png`, `fp_vs_rl/TerrainGame_2026-02-19_19-20-24/plot_regret.png`
+
 ## rl_vs_fp / AlmostRockPaperScissors_2026-02-18_21-56-02
 
 - Folder: `rl_vs_fp/AlmostRockPaperScissors_2026-02-18_21-56-02`

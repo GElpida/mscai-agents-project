@@ -306,6 +306,31 @@ def _terrain_path_cell_masks(n: int) -> np.ndarray:
     return mask
 
 
+def _default_terrain_heights(n: int, seed: int) -> np.ndarray:
+    """
+    Deterministic terrain heightfield used by the TerrainGame adapter.
+
+    Must match `experiments/game_registry.py::_default_terrain_heights`.
+    """
+    rng = np.random.default_rng(int(seed))
+    heights = rng.normal(loc=0.0, scale=1.0, size=(int(n), int(n)))
+    heights = heights - float(np.min(heights))
+    heights = heights / float(np.max(heights) + 1e-12)
+    return heights
+
+
+def _try_load_args_json(run_dir: Path) -> dict[str, Any] | None:
+    path = run_dir / "args.json"
+    if not path.exists():
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            out = json.load(f)
+    except Exception:
+        return None
+    return out if isinstance(out, dict) else None
+
+
 def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
     if not rows:
         return
@@ -454,20 +479,32 @@ def _plot_terrain_movement_gif(
     a1: np.ndarray,
     a2: np.ndarray,
     *,
+    heights: np.ndarray,
     n: int,
     n_paths: int,
+    fog: float,
+    k_diff: float,
     window: int,
     title: str,
     max_frames: int = 90,
     fps: int = 12,
 ) -> None:
     from matplotlib import animation
+    from matplotlib.colors import LightSource, LinearSegmentedColormap, Normalize
+    from matplotlib.patches import Circle
 
     t = np.asarray(t, dtype=int).reshape(-1)
     a1 = np.asarray(a1, dtype=int).reshape(-1)
     a2 = np.asarray(a2, dtype=int).reshape(-1)
 
     n = int(n)
+    heights = np.asarray(heights, dtype=float)
+    if heights.shape != (n, n):
+        raise ValueError(f"TerrainGame: expected heights shape ({n},{n}), got {tuple(heights.shape)}")
+    fog = float(fog)
+    k_diff = float(k_diff)
+    if not math.isfinite(fog) or not math.isfinite(k_diff):
+        raise ValueError(f"TerrainGame: fog/k_diff must be finite, got fog={fog!r}, k_diff={k_diff!r}")
     n_cells = int(n) * int(n)
     if int(a1.size) == 0:
         return
@@ -479,52 +516,70 @@ def _plot_terrain_movement_gif(
     paths = _enumerate_monotone_paths(n)
     if int(len(paths)) != int(n_paths):
         raise ValueError(f"TerrainGame: expected n_paths={int(n_paths)} from report, but enumerated {len(paths)} for n={n}")
-    path_masks = _terrain_path_cell_masks(n)  # (n_paths, n_cells)
 
     Tn = int(t.size)
     frames = int(min(int(max_frames), Tn))
     frame_idxs = np.linspace(0, Tn - 1, num=frames, dtype=int).tolist() if frames > 1 else [Tn - 1]
-    W = int(min(int(window), Tn)) if Tn > 0 else 1
 
     fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(6.8, 6.2), dpi=95)
 
-    rgb_init = np.zeros((n, n, 3), dtype=float)
-    im = ax.imshow(rgb_init, origin="lower", interpolation="nearest")
+    elev_cmap = LinearSegmentedColormap.from_list(
+        "elevation_green_to_red",
+        ["#1a9850", "#ffffbf", "#d73027"],  # green -> yellow -> red
+        N=256,
+    )
+    elev_norm = Normalize(vmin=float(np.min(heights)), vmax=float(np.max(heights)))
+
+    ls = LightSource(azdeg=315, altdeg=45)
+    shaded = ls.shade(heights, cmap=elev_cmap, norm=elev_norm, vert_exag=1.6, blend_mode="soft")
+    im = ax.imshow(shaded, origin="lower", interpolation="nearest")
+    cbar = fig.colorbar(plt.cm.ScalarMappable(norm=elev_norm, cmap=elev_cmap), ax=ax, fraction=0.046, pad=0.04)
+    cbar.set_label("Υψόμετρο")
 
     ax.set_xlabel("col")
     ax.set_ylabel("row")
 
-    sensor_scatter = ax.scatter([], [], s=70, c="white", edgecolors="black", linewidths=1.0, zorder=3)
-    (path_line,) = ax.plot([], [], color="cyan", linewidth=2.0, zorder=3)
+    sensor_scatter = ax.scatter([], [], s=70, c="white", edgecolors="black", linewidths=1.2, zorder=4)
+    (path_line,) = ax.plot([], [], color="#00bcd4", linewidth=2.2, zorder=4)
+    sensor_range = Circle(
+        (0.0, 0.0),
+        radius=0.0,
+        facecolor="#00bcd4",
+        edgecolor="black",
+        linewidth=1.0,
+        alpha=0.5,
+        zorder=3,
+    )
+    ax.add_patch(sensor_range)
 
-    contour: Any | None = None
     text = fig.text(0.5, 0.02, "", ha="center", va="bottom")
 
+    def _p_detect_grid(sr: int, sc: int) -> np.ndarray:
+        """
+        Detection probability per-cell for the given sensor placement.
+
+        Mirrors `games/terrain_sensor.py::TerrainGame.p_detect_cell`.
+        """
+        hs = float(heights[int(sr), int(sc)])
+        diff = np.abs(hs - heights)
+        logit = k_diff * diff - fog
+        p = 1.0 / (1.0 + np.exp(-logit))
+        return np.clip(p, 0.05, 0.95)
+
     def update(i: int):
-        nonlocal contour
         k = int(i)
-        end = k + 1
-        start = max(0, end - W)
-
-        s_counts = np.bincount(a1[start:end], minlength=n_cells).astype(float)
-        s_probs = (s_counts / float(np.sum(s_counts))) if float(np.sum(s_counts)) > 0 else (np.ones(n_cells) / float(n_cells))
-        p1 = s_probs.reshape(n, n)
-
-        p_counts = np.bincount(a2[start:end], minlength=int(n_paths)).astype(float)
-        p_probs = (p_counts / float(np.sum(p_counts))) if float(np.sum(p_counts)) > 0 else (np.ones(int(n_paths)) / float(n_paths))
-        p2_cells = (p_probs @ path_masks).reshape(n, n)
-
-        p1n = p1 / float(np.max(p1) + 1e-12)
-        p2n = p2_cells / float(np.max(p2_cells) + 1e-12)
-        rgb = np.zeros((n, n, 3), dtype=float)
-        rgb[:, :, 0] = np.sqrt(np.clip(p2n, 0.0, 1.0))  # red = P2 path density
-        rgb[:, :, 1] = np.sqrt(np.clip(p1n, 0.0, 1.0))  # green = P1 sensor density
-        im.set_data(rgb)
 
         sensor_idx = int(a1[k])
         sr = sensor_idx // n
         sc = sensor_idx % n
         sensor_scatter.set_offsets(np.array([[sc, sr]], dtype=float))
+        sensor_range.center = (float(sc), float(sr))
+        # "Real" range isn't part of the TerrainGame dynamics (no distance term),
+        # so we visualize an *equivalent radius* derived from the game's detection model:
+        # expected number of detected cells = sum_c p_detect(sensor, c).
+        p_grid = _p_detect_grid(int(sr), int(sc))
+        expected_cells = float(np.sum(p_grid))
+        sensor_range.radius = math.sqrt(max(0.0, expected_cells) / math.pi)
 
         path_idx = int(a2[k])
         coords = paths[path_idx]
@@ -532,17 +587,10 @@ def _plot_terrain_movement_gif(
         ys = [r for (r, _) in coords]
         path_line.set_data(xs, ys)
 
-        if contour is not None:
-            for coll in getattr(contour, "collections", []):
-                coll.remove()
-            contour = None
-        vmax = float(np.max(p2_cells)) if p2_cells.size else 0.0
-        if vmax > 1e-6:
-            levels = np.linspace(max(0.05, 0.33 * vmax), vmax, num=3)
-            contour = ax.contour(p2_cells, levels=levels, colors="white", linewidths=0.8, alpha=0.7, origin="lower")
-
-        text.set_text(f"{title}    t={int(t[k])}    window={int(min(W, end))}    (red=P2, green=P1, yellow=overlap)")
-        return (im, sensor_scatter, path_line, text)
+        text.set_text(
+            f"{title}    t={int(t[k])}    (υπόβαθρο=υψόμετρο, κύκλος=ισοδύναμη εμβέλεια, E[cells]={expected_cells:.2f})"
+        )
+        return (im, sensor_scatter, path_line, sensor_range, text)
 
     anim = animation.FuncAnimation(fig, update, frames=frame_idxs, interval=int(1000 / max(1, int(fps))), blit=False)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -764,13 +812,20 @@ def build_summary(results_dir: Path, out_dir: Path, *, window: int) -> None:
                     raise ValueError(
                         f"TerrainGame: expected square sensor action space, got n_actions_p1={int(n_actions_p1)}"
                     )
+                args_json = _try_load_args_json(run_dir) or {}
+                seed = int(args_json.get("seed", 0))
+                fog = float(args_json.get("terrain_fog", 0.25))
+                k_diff = float(args_json.get("terrain_k_diff", 0.9))
                 _plot_terrain_movement_gif(
                     out_run_dir / action_plot_name,
                     t,
                     a1,
                     a2,
+                    heights=_default_terrain_heights(n=int(n_side), seed=int(seed)),
                     n=int(n_side),
                     n_paths=int(n_actions_p2),
+                    fog=float(fog),
+                    k_diff=float(k_diff),
                     window=int(window),
                     title=f"TerrainGame ({exp_dir.name})",
                 )
