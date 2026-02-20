@@ -119,11 +119,17 @@ class _StochasticSwitchingDominance(TwoPlayerGame):
 
 
 class _TerrainSensor(TwoPlayerGame):
-    def __init__(self, *, n: int, fog: float, k_diff: float, seed: int):
+    def __init__(self, *, n: int, fog: float, k_diff: float, k_height: float, seed: int):
         from games.terrain_sensor import TerrainGame
 
         heights = _default_terrain_heights(n=int(n), seed=int(seed))
-        self._game = TerrainGame(heights=heights, fog=float(fog), k_diff=float(k_diff), seed=int(seed))
+        self._game = TerrainGame(
+            heights=heights,
+            fog=float(fog),
+            k_diff=float(k_diff),
+            k_height=float(k_height),
+            seed=int(seed),
+        )
         self._A_exp = _terrain_expected_payoff_matrix_p1(self._game)
         super().__init__(
             name="TerrainGame",
@@ -176,6 +182,7 @@ def discover_games(
     terrain_n: int = 4,
     terrain_fog: float = 0.25,
     terrain_k_diff: float = 0.9,
+    terrain_k_height: float = 1.0,
     include_terrain: bool = True,
 ) -> list[TwoPlayerGame]:
     """
@@ -214,7 +221,13 @@ def discover_games(
             if obj.__name__ == "TerrainGame":
                 if include_terrain:
                     discovered.append(
-                        _TerrainSensor(n=terrain_n, fog=terrain_fog, k_diff=terrain_k_diff, seed=seed)
+                        _TerrainSensor(
+                            n=terrain_n,
+                            fog=terrain_fog,
+                            k_diff=terrain_k_diff,
+                            k_height=terrain_k_height,
+                            seed=seed,
+                        )
                     )
                 continue
 

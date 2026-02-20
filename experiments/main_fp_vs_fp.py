@@ -328,6 +328,7 @@ if __name__ == "__main__":
     ap.add_argument("--terrain_n", type=int, default=4)
     ap.add_argument("--terrain_fog", type=float, default=0.25)
     ap.add_argument("--terrain_k_diff", type=float, default=0.9)
+    ap.add_argument("--terrain_k_height", type=float, default=1.0)
     args = ap.parse_args()
 
     print("\n" + "=" * 60)
@@ -341,6 +342,7 @@ if __name__ == "__main__":
         terrain_n=args.terrain_n,
         terrain_fog=args.terrain_fog,
         terrain_k_diff=args.terrain_k_diff,
+        terrain_k_height=args.terrain_k_height,
         include_terrain=True,
     )
     games = filter_games(games, args.only)

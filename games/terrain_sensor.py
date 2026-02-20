@@ -50,7 +50,7 @@ class TerrainGame:
     Detection is stochastic.
     """
 
-    def __init__(self, heights, fog=0.25, k_diff=0.9, seed=0):
+    def __init__(self, heights, fog=0.25, k_diff=0.9, k_height=1.0, seed=0):
         self.heights = np.array(heights, dtype=float)
         self.n = self.heights.shape[0]
         self.paths = enumerate_paths(self.n)
@@ -60,6 +60,7 @@ class TerrainGame:
 
         self.fog = fog
         self.k_diff = k_diff
+        self.k_height = k_height
         self.rng = random.Random(seed)
 
     # ----- detection model -----
@@ -68,7 +69,8 @@ class TerrainGame:
         hs = self.heights[sensor]
         hc = self.heights[cell]
         diff = abs(hs - hc)
-        logit = self.k_diff * diff - self.fog
+        # Higher sensor elevation increases detection probability.
+        logit = (self.k_diff * diff) - self.fog + (self.k_height * hs)
         return float(np.clip(sigmoid(logit), 0.05, 0.95))
 
     def p_detect_path(self, sensor, path_idx):

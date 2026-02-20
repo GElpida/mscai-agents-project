@@ -302,6 +302,7 @@ def _try_parse_args_from_report(run_dir: Path) -> dict[str, float]:
         "terrain_n": re.compile(r"^\s*terrain_n:\s*(?P<v>[-+]?\d+)\s*$"),
         "terrain_fog": re.compile(r"^\s*terrain_fog:\s*(?P<v>[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)\s*$"),
         "terrain_k_diff": re.compile(r"^\s*terrain_k_diff:\s*(?P<v>[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)\s*$"),
+        "terrain_k_height": re.compile(r"^\s*terrain_k_height:\s*(?P<v>[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)\s*$"),
     }
     try:
         with open(report_path, "r", encoding="utf-8") as f:
@@ -384,10 +385,10 @@ def _try_load_args_json(run_dir: Path) -> dict[str, Any] | None:
     return out if isinstance(out, dict) else None
 
 
-_TERRAIN_A_CACHE: dict[tuple[int, int, float, float], np.ndarray] = {}
+_TERRAIN_A_CACHE: dict[tuple[int, int, float, float, float], np.ndarray] = {}
 
 
-def _terrain_expected_payoff_matrix_p1(*, n: int, seed: int, fog: float, k_diff: float) -> np.ndarray:
+def _terrain_expected_payoff_matrix_p1(*, n: int, seed: int, fog: float, k_diff: float, k_height: float) -> np.ndarray:
     """
     Expected payoff matrix for TerrainGame (Player 1 = sensor placement).
 
@@ -399,8 +400,9 @@ def _terrain_expected_payoff_matrix_p1(*, n: int, seed: int, fog: float, k_diff:
     seed = int(seed)
     fog = float(fog)
     k_diff = float(k_diff)
+    k_height = float(k_height)
 
-    cache_key = (n, seed, float(fog), float(k_diff))
+    cache_key = (n, seed, float(fog), float(k_diff), float(k_height))
     cached = _TERRAIN_A_CACHE.get(cache_key)
     if cached is not None:
         return cached.copy()
@@ -416,7 +418,7 @@ def _terrain_expected_payoff_matrix_p1(*, n: int, seed: int, fog: float, k_diff:
     for sensor_idx in range(n_cells):
         hs = float(h_flat[int(sensor_idx)])
         diff = np.abs(hs - h_flat)
-        logit = k_diff * diff - fog
+        logit = (k_diff * diff) - fog + (k_height * hs)
         p_cells = 1.0 / (1.0 + np.exp(-logit))
         p_cells = np.clip(p_cells, 0.05, 0.95)
         log_1mp = np.log(np.clip(1.0 - p_cells, 1e-12, 1.0))
@@ -631,7 +633,7 @@ def _plot_terrain_movement_gif(
     shaded = ls.shade(heights, cmap=elev_cmap, norm=elev_norm, vert_exag=1.6, blend_mode="soft")
     im = ax.imshow(shaded, origin="lower", interpolation="nearest")
     cbar = fig.colorbar(plt.cm.ScalarMappable(norm=elev_norm, cmap=elev_cmap), ax=ax, fraction=0.046, pad=0.04)
-    cbar.set_label("Υψόμετρο")
+    cbar.set_label("Elevation")
 
     ax.set_xlabel("col")
     ax.set_ylabel("row")
@@ -651,17 +653,23 @@ def _plot_terrain_movement_gif(
 
     text = fig.text(0.5, 0.02, "", ha="center", va="bottom")
 
-    def _p_detect_grid(sr: int, sc: int) -> np.ndarray:
+    def _expected_cells_from_elevation(sr: int, sc: int) -> float:
         """
-        Detection probability per-cell for the given sensor placement.
+        "Sensor range" for visualization only (not part of TerrainGame dynamics).
 
-        Mirrors `games/terrain_sensor.py::TerrainGame.p_detect_cell`.
+        Requirement:
+          - Max range = 4 cells when the sensor is at the highest elevation.
+
+        We implement:
+          E[cells] = 4 * normalize(h_sensor)  in [0, 4]
         """
+        hmin = float(np.min(heights))
+        hmax = float(np.max(heights))
         hs = float(heights[int(sr), int(sc)])
-        diff = np.abs(hs - heights)
-        logit = k_diff * diff - fog
-        p = 1.0 / (1.0 + np.exp(-logit))
-        return np.clip(p, 0.05, 0.95)
+        if not math.isfinite(hmin) or not math.isfinite(hmax) or abs(hmax - hmin) < 1e-12:
+            return 0.0
+        hs_norm = (hs - hmin) / (hmax - hmin)
+        return float(np.clip(4.0 * float(hs_norm), 0.0, 4.0))
 
     def update(i: int):
         k = int(i)
@@ -671,11 +679,8 @@ def _plot_terrain_movement_gif(
         sc = sensor_idx % n
         sensor_scatter.set_offsets(np.array([[sc, sr]], dtype=float))
         sensor_range.center = (float(sc), float(sr))
-        # "Real" range isn't part of the TerrainGame dynamics (no distance term),
-        # so we visualize an *equivalent radius* derived from the game's detection model:
-        # expected number of detected cells = sum_c p_detect(sensor, c).
-        p_grid = _p_detect_grid(int(sr), int(sc))
-        expected_cells = float(np.sum(p_grid))
+        # Visual range is derived from elevation (max 4 cells at highest point).
+        expected_cells = _expected_cells_from_elevation(int(sr), int(sc))
         sensor_range.radius = math.sqrt(max(0.0, expected_cells) / math.pi)
 
         path_idx = int(a2[k])
@@ -684,10 +689,140 @@ def _plot_terrain_movement_gif(
         ys = [r for (r, _) in coords]
         path_line.set_data(xs, ys)
 
-        text.set_text(
-            f"{title}    t={int(t[k])}    (υπόβαθρο=υψόμετρο, κύκλος=ισοδύναμη εμβέλεια, E[cells]={expected_cells:.2f})"
-        )
+        text.set_text(f"{title}    t={int(t[k])}    E[cells]={expected_cells:.2f}")
         return (im, sensor_scatter, path_line, sensor_range, text)
+
+    anim = animation.FuncAnimation(fig, update, frames=frame_idxs, interval=int(1000 / max(1, int(fps))), blit=False)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    anim.save(out_path, writer=animation.PillowWriter(fps=int(fps)))
+    plt.close(fig)
+
+
+def _plot_switching_dominance_gif(
+    out_path: Path,
+    t: np.ndarray,
+    a1: np.ndarray,
+    a2: np.ndarray,
+    *,
+    states: np.ndarray | None,
+    A_by_state: np.ndarray,
+    title: str,
+    max_frames: int = 140,
+    fps: int = 12,
+) -> None:
+    from matplotlib import animation
+    from matplotlib.colors import Normalize
+    from matplotlib.patches import Rectangle
+
+    t = np.asarray(t, dtype=int).reshape(-1)
+    a1 = np.asarray(a1, dtype=int).reshape(-1)
+    a2 = np.asarray(a2, dtype=int).reshape(-1)
+    if states is not None:
+        states = np.asarray(states, dtype=int).reshape(-1)
+
+    Tn = int(t.size)
+    if Tn <= 0:
+        return
+
+    A_by_state = np.asarray(A_by_state, dtype=float)
+    if A_by_state.ndim != 3:
+        raise ValueError(f"switching_dominance: expected A_by_state ndim=3, got {A_by_state.ndim}")
+    nS, nA1, nA2 = (int(A_by_state.shape[0]), int(A_by_state.shape[1]), int(A_by_state.shape[2]))
+    if nA1 <= 0 or nA2 <= 0:
+        return
+
+    if int(np.max(a1)) >= nA1:
+        raise ValueError(f"switching_dominance: max(a1)={int(np.max(a1))} out of range for nA1={nA1}")
+    if int(np.max(a2)) >= nA2:
+        raise ValueError(f"switching_dominance: max(a2)={int(np.max(a2))} out of range for nA2={nA2}")
+
+    frames = int(min(int(max_frames), Tn))
+    frame_idxs = np.linspace(0, Tn - 1, num=frames, dtype=int).tolist() if frames > 1 else [Tn - 1]
+
+    # Swap roles when players "catch": interpret as landing on same grid cell (a1 == a2).
+    swapped_role = np.zeros(Tn, dtype=bool)
+    swapped = False
+    for i in range(Tn):
+        swapped_role[i] = swapped
+        if int(a1[i]) == int(a2[i]):
+            swapped = not swapped
+
+    fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(5.8, 5.8), dpi=110)
+    vmin = float(np.min(A_by_state))
+    vmax = float(np.max(A_by_state))
+    norm = Normalize(vmin=vmin, vmax=vmax)
+
+    init_state = int(states[0]) if states is not None and states.size else 0
+    init_state = max(0, min(nS - 1, int(init_state)))
+    im = ax.imshow(
+        A_by_state[init_state],
+        origin="lower",
+        interpolation="nearest",
+        cmap="coolwarm",
+        norm=norm,
+        extent=(-0.5, nA1 - 0.5, -0.5, nA2 - 0.5),
+    )
+    cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cbar.set_label("Payoff (P1)")
+
+    # Grid lines
+    for x in range(nA1 + 1):
+        ax.axvline(x - 0.5, color="black", linewidth=0.8, alpha=0.5)
+    for y in range(nA2 + 1):
+        ax.axhline(y - 0.5, color="black", linewidth=0.8, alpha=0.5)
+
+    ax.set_xlim(-0.5, nA1 - 0.5)
+    ax.set_ylim(-0.5, nA2 - 0.5)
+    ax.set_xticks(list(range(nA1)))
+    ax.set_yticks(list(range(nA2)))
+    ax.set_xticklabels([_action_label("switching_dominance", x) for x in range(nA1)])
+    ax.set_yticklabels([_action_label("switching_dominance", y) for y in range(nA2)])
+    ax.set_xlabel("P1 action")
+    ax.set_ylabel("P2 action")
+
+    # Player markers; symbols swap on role swap.
+    p1, = ax.plot([], [], linestyle="", marker="o", markersize=11, markerfacecolor="white", markeredgecolor="black", zorder=5)
+    p2, = ax.plot([], [], linestyle="", marker="^", markersize=11, markerfacecolor="#00bcd4", markeredgecolor="black", zorder=5)
+
+    highlight = Rectangle((0.0, 0.0), 1.0, 1.0, fill=False, linewidth=2.2, edgecolor="#ffd54f", zorder=6)
+    ax.add_patch(highlight)
+
+    text = fig.text(0.5, 0.02, "", ha="center", va="bottom")
+
+    def update(i: int):
+        k = int(i)
+        st = int(states[k]) if states is not None and int(states.size) > k else 0
+        st = max(0, min(nS - 1, int(st)))
+        im.set_data(A_by_state[st])
+
+        x = int(a1[k])
+        y = int(a2[k])
+        caught = bool(x == y)
+        swapped_now = bool(swapped_role[k])
+
+        # Offsets so both points are visible even when they coincide.
+        p1_off = (-0.14, 0.14)
+        p2_off = (0.14, -0.14)
+
+        if swapped_now:
+            p1.set_marker("^")
+            p1.set_markerfacecolor("#00bcd4")
+            p2.set_marker("o")
+            p2.set_markerfacecolor("white")
+        else:
+            p1.set_marker("o")
+            p1.set_markerfacecolor("white")
+            p2.set_marker("^")
+            p2.set_markerfacecolor("#00bcd4")
+
+        p1.set_data([x + p1_off[0]], [y + p1_off[1]])
+        p2.set_data([x + p2_off[0]], [y + p2_off[1]])
+
+        highlight.set_xy((x - 0.5, y - 0.5))
+        highlight.set_visible(bool(caught))
+
+        text.set_text(f"{title}    t={int(t[k])}    state={st}    catch={int(caught)}    swapped={int(swapped_now)}")
+        return (im, p1, p2, highlight, text)
 
     anim = animation.FuncAnimation(fig, update, frames=frame_idxs, interval=int(1000 / max(1, int(fps))), blit=False)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -778,7 +913,7 @@ def build_summary(results_dir: Path, out_dir: Path, *, window: int) -> None:
                     (out_run_dir / legacy_name).unlink()
                 except FileNotFoundError:
                     pass
-            for legacy_name in ("plot_action_proportions.png", "plot_terrain_movement.gif"):
+            for legacy_name in ("plot_action_proportions.png", "plot_terrain_movement.gif", "plot_switching_dominance.gif"):
                 try:
                     (out_run_dir / legacy_name).unlink()
                 except FileNotFoundError:
@@ -843,14 +978,22 @@ def build_summary(results_dir: Path, out_dir: Path, *, window: int) -> None:
 
             if game_key == "terrain_sensor" and payoff.kind == "env_no_matrix":
                 args_json = _try_load_args_json(run_dir) or {}
-                if any(k not in args_json for k in ("seed", "terrain_n", "terrain_fog", "terrain_k_diff")):
+                if any(k not in args_json for k in ("seed", "terrain_n", "terrain_fog", "terrain_k_diff", "terrain_k_height")):
                     args_json = {**_try_parse_args_from_report(run_dir), **args_json}
                 try:
                     n_side = int(args_json.get("terrain_n", 0)) or int(round(math.sqrt(float(n_actions_p1))))
                     seed = int(args_json.get("seed", 0))
                     fog = float(args_json.get("terrain_fog", 0.25))
                     k_diff = float(args_json.get("terrain_k_diff", 0.9))
-                    A_terrain = _terrain_expected_payoff_matrix_p1(n=n_side, seed=seed, fog=fog, k_diff=k_diff)
+                    # Backward-compatible default: older runs didn't have elevation-boost dynamics.
+                    k_height = float(args_json.get("terrain_k_height", 0.0))
+                    A_terrain = _terrain_expected_payoff_matrix_p1(
+                        n=n_side,
+                        seed=seed,
+                        fog=fog,
+                        k_diff=k_diff,
+                        k_height=k_height,
+                    )
                     if A_terrain.shape == (int(n_actions_p1), int(n_actions_p2)):
                         payoff = PayoffSpec(kind="zero_sum", A=A_terrain)
                 except Exception:
@@ -1010,6 +1153,23 @@ def build_summary(results_dir: Path, out_dir: Path, *, window: int) -> None:
                     k_diff=float(k_diff),
                     window=int(window),
                     title=f"TerrainGame ({exp_dir.name})",
+                )
+            elif game_key == "switching_dominance":
+                action_plot_name = "plot_switching_dominance.gif"
+                if payoff.A_by_state is None:
+                    raise ValueError("switching_dominance: missing A_by_state payoff spec for GIF")
+                if states is None:
+                    states_for_plot = np.zeros(int(t.size), dtype=int)
+                else:
+                    states_for_plot = np.asarray(states, dtype=int).reshape(-1)
+                _plot_switching_dominance_gif(
+                    out_run_dir / action_plot_name,
+                    t,
+                    a1,
+                    a2,
+                    states=states_for_plot,
+                    A_by_state=np.asarray(payoff.A_by_state, dtype=float),
+                    title=f"SwitchingDominance ({exp_dir.name})",
                 )
             else:
                 _plot_action_proportions(
