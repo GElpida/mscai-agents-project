@@ -15,3 +15,7 @@ ENV/
 # OS junk
 .DS_Store
 Thumbs.db
+
+# Local helper scripts / generated visualizations (keep repo clean)
+local_gif_tricks.py
+results/gif_tricks/
