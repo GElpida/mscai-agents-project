@@ -1,7 +1,0 @@
-player,action,action_label,prob
-P1,0,Rock,0.3622
-P1,1,Paper,0.3178
-P1,2,Scissors,0.32
-P2,0,Rock,0.3332
-P2,1,Paper,0.3308
-P2,2,Scissors,0.336

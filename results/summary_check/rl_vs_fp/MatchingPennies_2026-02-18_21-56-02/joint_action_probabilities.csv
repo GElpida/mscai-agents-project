@@ -1,5 +1,0 @@
-action_p1,action_p1_label,action_p2,action_p2_label,prob
-0,Heads,0,Heads,0.2686
-0,Heads,1,Tails,0.2314
-1,Tails,0,Heads,0.2368
-1,Tails,1,Tails,0.2632

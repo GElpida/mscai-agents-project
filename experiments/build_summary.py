@@ -466,8 +466,45 @@ def _plot_regret(out_path: Path, t: np.ndarray, reg1: np.ndarray, reg2: np.ndarr
     reg2 = np.asarray(reg2, dtype=float)
 
     fig, ax = plt.subplots(figsize=(9.5, 5.2), dpi=100)
-    ax.plot(t, reg1, linewidth=2, label="Player 1")
-    ax.plot(t, reg2, linewidth=2, linestyle="--", label="Player 2")
+    denom = np.maximum(1, t).astype(float)
+    mean_reg1 = reg1 / denom
+    mean_reg2 = reg2 / denom
+    ax.plot(t, mean_reg1, linewidth=2, label="Player 1")
+    ax.plot(t, mean_reg2, linewidth=2, linestyle="--", label="Player 2")
+    ax.set_xlabel("t (round)")
+    ax.set_ylabel("Mean regret (cumulative / t)")
+    ax.set_title(title)
+    ax.legend(loc="upper left", frameon=False)
+    fig.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path)
+    plt.close(fig)
+
+
+def _plot_regret_cumulative_limited(
+    out_path: Path,
+    t: np.ndarray,
+    reg1: np.ndarray,
+    reg2: np.ndarray,
+    *,
+    title: str,
+    t_max: int,
+) -> None:
+    t = np.asarray(t, dtype=int).reshape(-1)
+    reg1 = np.asarray(reg1, dtype=float).reshape(-1)
+    reg2 = np.asarray(reg2, dtype=float).reshape(-1)
+    if int(t.size) == 0:
+        return
+
+    t_max = int(t_max)
+    if int(np.max(t)) <= t_max:
+        mask = slice(None)
+    else:
+        mask = t <= int(t_max)
+
+    fig, ax = plt.subplots(figsize=(9.5, 5.2), dpi=100)
+    ax.plot(t[mask], reg1[mask], linewidth=2, label="Player 1")
+    ax.plot(t[mask], reg2[mask], linewidth=2, linestyle="--", label="Player 2")
     ax.set_xlabel("t (round)")
     ax.set_ylabel("Cumulative regret")
     ax.set_title(title)
@@ -830,8 +867,441 @@ def _plot_switching_dominance_gif(
     plt.close(fig)
 
 
+def _plot_switching_dominance_movement_gif(
+    out_path: Path,
+    t: np.ndarray,
+    a1: np.ndarray,
+    a2: np.ndarray,
+    *,
+    states: np.ndarray | None,
+    A_by_state: np.ndarray,
+    title: str,
+    fps: int = 12,
+) -> None:
+    """
+    A small "how to read the game" GIF for StochasticSwitchingDominanceGame.
+
+    Important: in this environment, the state transition happens *after* the joint action is played
+    (i.e., between round k and k+1). Therefore this visualization shows two consecutive rounds:
+      - Round k in state s_k
+      - The transition to s_{k+1}
+      - Round k+1 in state s_{k+1}
+
+    Animation:
+      1) Start positions at (previous actions) in state s_k
+      2) Each agent picks an action for round k
+      3) Joint action + payoff for round k
+      4) Visualize the state transition s_k -> s_{k+1}
+      5) Start positions for round k+1 in state s_{k+1}
+      6) Each agent picks an action for round k+1
+      7) Joint action + payoff for round k+1 (end)
+    """
+    from matplotlib import animation
+    from matplotlib.colors import Normalize
+    from matplotlib.patches import Rectangle
+
+    t = np.asarray(t, dtype=int).reshape(-1)
+    a1 = np.asarray(a1, dtype=int).reshape(-1)
+    a2 = np.asarray(a2, dtype=int).reshape(-1)
+    if states is not None:
+        states = np.asarray(states, dtype=int).reshape(-1)
+
+    if int(t.size) <= 1:
+        return
+
+    A_by_state = np.asarray(A_by_state, dtype=float)
+    if A_by_state.ndim != 3:
+        raise ValueError(f"switching_dominance movement: expected A_by_state ndim=3, got {A_by_state.ndim}")
+    nS, nA1, nA2 = (int(A_by_state.shape[0]), int(A_by_state.shape[1]), int(A_by_state.shape[2]))
+    if nS <= 0 or nA1 <= 0 or nA2 <= 0:
+        return
+
+    # Choose a two-round window. If we have a state sequence, prefer the first actual switch.
+    k0 = 0
+    if states is not None and int(states.size) >= 2:
+        for i in range(int(states.size) - 1):
+            if int(states[i]) != int(states[i + 1]):
+                k0 = int(i)
+                break
+        k0 = max(0, min(k0, int(t.size) - 2))
+
+    k1 = int(k0 + 1)
+
+    x0 = int(a1[k0])
+    y0 = int(a2[k0])
+    x1 = int(a1[k1])
+    y1 = int(a2[k1])
+
+    for name, val, lim in (("a1[k0]", x0, nA1), ("a2[k0]", y0, nA2), ("a1[k1]", x1, nA1), ("a2[k1]", y1, nA2)):
+        if int(val) < 0 or int(val) >= int(lim):
+            raise ValueError(f"switching_dominance movement: {name}={int(val)} out of range (limit={int(lim)})")
+
+    st0 = int(states[k0]) if states is not None and int(states.size) > k0 else 0
+    st1 = int(states[k1]) if states is not None and int(states.size) > k1 else st0
+    st0 = max(0, min(nS - 1, int(st0)))
+    st1 = max(0, min(nS - 1, int(st1)))
+    switched = bool(st1 != st0)
+
+    # "Start positions" use previous actions (k0-1 for round k0; and k0 for round k1).
+    x_prev = int(a1[k0 - 1]) if k0 > 0 else int(x0)
+    y_prev = int(a2[k0 - 1]) if k0 > 0 else int(y0)
+    x_prev = max(0, min(nA1 - 1, int(x_prev)))
+    y_prev = max(0, min(nA2 - 1, int(y_prev)))
+
+    r0_p1 = float(A_by_state[st0, x0, y0])
+    r0_p2 = float(-r0_p1)
+    r1_p1 = float(A_by_state[st1, x1, y1])
+    r1_p2 = float(-r1_p1)
+
+    fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(6.1, 6.1), dpi=110)
+    vmin = float(np.min(A_by_state))
+    vmax = float(np.max(A_by_state))
+    norm = Normalize(vmin=vmin, vmax=vmax)
+
+    im = ax.imshow(
+        A_by_state[st0],
+        origin="lower",
+        interpolation="nearest",
+        cmap="coolwarm",
+        norm=norm,
+        extent=(-0.5, nA1 - 0.5, -0.5, nA2 - 0.5),
+    )
+    cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cbar.set_label("Payoff (P1)")
+
+    for gx in range(nA1 + 1):
+        ax.axvline(gx - 0.5, color="black", linewidth=0.8, alpha=0.5)
+    for gy in range(nA2 + 1):
+        ax.axhline(gy - 0.5, color="black", linewidth=0.8, alpha=0.5)
+
+    ax.set_xticks(list(range(nA1)))
+    ax.set_yticks(list(range(nA2)))
+    ax.set_xticklabels([_action_label("switching_dominance", a) for a in range(nA1)])
+    ax.set_yticklabels([_action_label("switching_dominance", b) for b in range(nA2)])
+    ax.set_xlabel("P1 action")
+    ax.set_ylabel("P2 action")
+    ax.set_title(str(title), pad=12)
+
+    ax.set_xlim(-0.5, nA1 - 0.5)
+    ax.set_ylim(-0.5, nA2 - 0.5)
+
+    cell_hi = Rectangle(
+        (x0 - 0.5, y0 - 0.5),
+        width=1.0,
+        height=1.0,
+        fill=False,
+        linewidth=2.4,
+        edgecolor="#ffecb3",
+        zorder=6,
+        visible=False,
+    )
+    ax.add_patch(cell_hi)
+
+    p1, = ax.plot(
+        [],
+        [],
+        linestyle="",
+        marker="o",
+        markersize=11,
+        markerfacecolor="white",
+        markeredgecolor="black",
+        zorder=7,
+        clip_on=False,
+    )
+    p2, = ax.plot(
+        [],
+        [],
+        linestyle="",
+        marker="^",
+        markersize=11,
+        markerfacecolor="#00bcd4",
+        markeredgecolor="black",
+        zorder=7,
+        clip_on=False,
+    )
+
+    text = fig.text(0.5, 0.02, "", ha="center", va="bottom")
+
+    # Offsets so both markers are visible in the same cell.
+    p1_off = (-0.14, 0.14)
+    p2_off = (0.14, -0.14)
+
+    def _lerp(a: float, b: float, u: float) -> float:
+        u = float(np.clip(u, 0.0, 1.0))
+        return float(a + (b - a) * u)
+
+    n_start0 = 8
+    n_pick0 = 10
+    n_joint0 = 10
+    n_switch = 10
+    n_start1 = 8
+    n_pick1 = 10
+    n_joint1 = 10
+    n_end = 6
+    total = int(n_start0 + n_pick0 + n_joint0 + n_switch + n_start1 + n_pick1 + n_joint1 + n_end)
+
+    def update(frame: int):
+        i = int(frame)
+        # Phase 1: start positions at round k0 (previous actions) in state st0.
+        if i < n_start0:
+            im.set_data(A_by_state[st0])
+            cell_hi.set_visible(False)
+            p1.set_data([float(x_prev) + p1_off[0]], [float(y_prev) + p1_off[1]])
+            p2.set_data([float(x_prev) + p2_off[0]], [float(y_prev) + p2_off[1]])
+            text.set_text(f"round={int(t[k0])} start    state={st0}")
+            return (im, p1, p2, cell_hi, text)
+
+        j = i - n_start0
+        # Phase 2: agents pick actions for round k0 (move along their axes).
+        if j < n_pick0:
+            u = 1.0 if n_pick0 <= 1 else float(j) / float(n_pick0 - 1)
+            im.set_data(A_by_state[st0])
+            cell_hi.set_visible(False)
+            # P1 moves horizontally (choosing its action index), P2 moves vertically.
+            p1.set_data([_lerp(float(x_prev), float(x0), u) + p1_off[0]], [float(y_prev) + p1_off[1]])
+            p2.set_data([float(x_prev) + p2_off[0]], [_lerp(float(y_prev), float(y0), u) + p2_off[1]])
+            text.set_text(
+                f"round={int(t[k0])} pick    state={st0}    "
+                f"P1={_action_label('switching_dominance', x0)}  P2={_action_label('switching_dominance', y0)}"
+            )
+            return (im, p1, p2, cell_hi, text)
+
+        k = j - n_pick0
+        # Phase 3: joint action for round k0 (move into the joint cell).
+        if k < n_joint0:
+            u = 1.0 if n_joint0 <= 1 else float(k) / float(n_joint0 - 1)
+            im.set_data(A_by_state[st0])
+            cell_hi.set_visible(True)
+            cell_hi.set_xy((float(x0) - 0.5, float(y0) - 0.5))
+            p1_from_x = float(x0) + p1_off[0]
+            p1_from_y = float(y_prev) + p1_off[1]
+            p2_from_x = float(x_prev) + p2_off[0]
+            p2_from_y = float(y0) + p2_off[1]
+            p1.set_data([_lerp(p1_from_x, float(x0) + p1_off[0], u)], [_lerp(p1_from_y, float(y0) + p1_off[1], u)])
+            p2.set_data([_lerp(p2_from_x, float(x0) + p2_off[0], u)], [_lerp(p2_from_y, float(y0) + p2_off[1], u)])
+            text.set_text(
+                f"round={int(t[k0])} play    state={st0}    "
+                f"(a,b)=({_action_label('switching_dominance', x0)}, {_action_label('switching_dominance', y0)})    "
+                f"r1={r0_p1:+.0f}  r2={r0_p2:+.0f}"
+            )
+            return (im, p1, p2, cell_hi, text)
+
+        m = k - n_joint0
+        # Phase 4: visualize the state transition to round k1.
+        if m < n_switch:
+            im.set_data(A_by_state[st0 if m < int(n_switch // 2) else st1])
+            cell_hi.set_visible(True)
+            cell_hi.set_xy((float(x0) - 0.5, float(y0) - 0.5))
+            p1.set_data([float(x0) + p1_off[0]], [float(y0) + p1_off[1]])
+            p2.set_data([float(x0) + p2_off[0]], [float(y0) + p2_off[1]])
+            text.set_text(
+                f"transition    state {st0} -> {st1}    switched={int(switched)}"
+            )
+            return (im, p1, p2, cell_hi, text)
+
+        n = m - n_switch
+        # Phase 5: start positions at round k1 in state st1 (previous actions are x0,y0).
+        if n < n_start1:
+            im.set_data(A_by_state[st1])
+            cell_hi.set_visible(False)
+            p1.set_data([float(x0) + p1_off[0]], [float(y0) + p1_off[1]])
+            p2.set_data([float(x0) + p2_off[0]], [float(y0) + p2_off[1]])
+            text.set_text(f"round={int(t[k1])} start    state={st1}")
+            return (im, p1, p2, cell_hi, text)
+
+        q = n - n_start1
+        # Phase 6: agents pick actions for round k1.
+        if q < n_pick1:
+            u = 1.0 if n_pick1 <= 1 else float(q) / float(n_pick1 - 1)
+            im.set_data(A_by_state[st1])
+            cell_hi.set_visible(False)
+            p1.set_data([_lerp(float(x0), float(x1), u) + p1_off[0]], [float(y0) + p1_off[1]])
+            p2.set_data([float(x0) + p2_off[0]], [_lerp(float(y0), float(y1), u) + p2_off[1]])
+            text.set_text(
+                f"round={int(t[k1])} pick    state={st1}    "
+                f"P1={_action_label('switching_dominance', x1)}  P2={_action_label('switching_dominance', y1)}"
+            )
+            return (im, p1, p2, cell_hi, text)
+
+        r = q - n_pick1
+        # Phase 7: joint action for round k1.
+        if r < n_joint1:
+            u = 1.0 if n_joint1 <= 1 else float(r) / float(n_joint1 - 1)
+            im.set_data(A_by_state[st1])
+            cell_hi.set_visible(True)
+            cell_hi.set_xy((float(x1) - 0.5, float(y1) - 0.5))
+            p1_from_x = float(x1) + p1_off[0]
+            p1_from_y = float(y0) + p1_off[1]
+            p2_from_x = float(x0) + p2_off[0]
+            p2_from_y = float(y1) + p2_off[1]
+            p1.set_data([_lerp(p1_from_x, float(x1) + p1_off[0], u)], [_lerp(p1_from_y, float(y1) + p1_off[1], u)])
+            p2.set_data([_lerp(p2_from_x, float(x1) + p2_off[0], u)], [_lerp(p2_from_y, float(y1) + p2_off[1], u)])
+            text.set_text(
+                f"round={int(t[k1])} play    state={st1}    "
+                f"(a,b)=({_action_label('switching_dominance', x1)}, {_action_label('switching_dominance', y1)})    "
+                f"r1={r1_p1:+.0f}  r2={r1_p2:+.0f}"
+            )
+            return (im, p1, p2, cell_hi, text)
+
+        # Phase 8: end.
+        im.set_data(A_by_state[st1])
+        cell_hi.set_visible(True)
+        cell_hi.set_xy((float(x1) - 0.5, float(y1) - 0.5))
+        p1.set_data([float(x1) + p1_off[0]], [float(y1) + p1_off[1]])
+        p2.set_data([float(x1) + p2_off[0]], [float(y1) + p2_off[1]])
+        text.set_text(f"end    round={int(t[k1])}    state={st1}")
+        return (im, p1, p2, cell_hi, text)
+
+    anim = animation.FuncAnimation(fig, update, frames=list(range(total)), interval=int(1000 / max(1, int(fps))), blit=False)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    anim.save(out_path, writer=animation.PillowWriter(fps=int(fps)))
+    plt.close(fig)
+
+
 def build_summary(results_dir: Path, out_dir: Path, *, window: int) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    experiment_dirs = sorted([p for p in results_dir.iterdir() if p.is_dir() and p.name != "summary"], key=lambda p: p.name)
+
+    # Pre-pass: compute per-game cutoff for the limited cumulative-regret plot.
+    # cutoff(game) = max_t (first t where rolling exploitability < 0.10) + 10, across experiments.
+    max_t_converge_by_game: dict[str, int] = {}
+    for exp_dir in experiment_dirs:
+        run_dirs = sorted([p for p in exp_dir.iterdir() if p.is_dir()], key=lambda p: p.name)
+        for run_dir in run_dirs:
+            results_csv = run_dir / "results.csv"
+            if not results_csv.exists():
+                continue
+
+            game_name = _infer_game_name(run_dir.name)
+            game_key = GAME_NAME_TO_KEY.get(game_name, game_name)
+            payoff = _load_payoff_spec(game_key)
+
+            dat = _read_results_csv(results_csv)
+            t = dat["t"]
+            a1 = dat["a1"]
+            a2 = dat["a2"]
+            states = dat.get("state", None)
+            if states is None:
+                states = _try_load_states_from_npz(run_dir, int(t.size))
+            if states is None and game_key == "switching_dominance":
+                args_json = _try_load_args_json(run_dir) or {}
+                if "seed" not in args_json or "switch_p" not in args_json:
+                    args_json = {**_try_parse_args_from_report(run_dir), **args_json}
+                if "seed" in args_json and "switch_p" in args_json and int(t.size) > 0:
+                    try:
+                        states = _reconstruct_switching_states(
+                            Tn=int(t.size),
+                            switch_p=float(args_json["switch_p"]),
+                            seed=int(args_json["seed"]),
+                        )
+                    except Exception:
+                        states = None
+
+            Tn = int(t.size)
+            if Tn <= 0:
+                continue
+
+            n_actions_p1 = int(np.max(a1) + 1) if a1.size else 1
+            n_actions_p2 = int(np.max(a2) + 1) if a2.size else 1
+            if payoff.A is not None:
+                n_actions_p1 = int(payoff.A.shape[0])
+                n_actions_p2 = int(payoff.A.shape[1])
+            if payoff.B is not None:
+                n_actions_p1 = int(payoff.B.shape[0])
+                n_actions_p2 = int(payoff.B.shape[1])
+            if payoff.A_by_state is not None:
+                n_actions_p1 = int(payoff.A_by_state.shape[1])
+                n_actions_p2 = int(payoff.A_by_state.shape[2])
+            if game_key == "terrain_sensor":
+                parsed = _try_parse_action_spaces_from_report(run_dir)
+                if parsed is not None:
+                    n_actions_p1, n_actions_p2 = int(parsed[0]), int(parsed[1])
+
+            # TerrainGame: reconstruct expected payoff matrix if needed.
+            if game_key == "terrain_sensor" and payoff.kind == "env_no_matrix":
+                args_json = _try_load_args_json(run_dir) or {}
+                if any(k not in args_json for k in ("seed", "terrain_n", "terrain_fog", "terrain_k_diff", "terrain_k_height")):
+                    args_json = {**_try_parse_args_from_report(run_dir), **args_json}
+                try:
+                    n_side = int(args_json.get("terrain_n", 0)) or int(round(math.sqrt(float(n_actions_p1))))
+                    seed = int(args_json.get("seed", 0))
+                    fog = float(args_json.get("terrain_fog", 0.25))
+                    k_diff = float(args_json.get("terrain_k_diff", 0.9))
+                    k_height = float(args_json.get("terrain_k_height", 0.0))
+                    A_terrain = _terrain_expected_payoff_matrix_p1(
+                        n=n_side,
+                        seed=seed,
+                        fog=fog,
+                        k_diff=k_diff,
+                        k_height=k_height,
+                    )
+                    if A_terrain.shape == (int(n_actions_p1), int(n_actions_p2)):
+                        payoff = PayoffSpec(kind="zero_sum", A=A_terrain)
+                except Exception:
+                    pass
+
+            x_emp = _empirical_dist(a1, n_actions_p1)
+            y_emp = _empirical_dist(a2, n_actions_p2)
+
+            expl_curve: np.ndarray | None = None
+            if payoff.kind == "zero_sum" and payoff.A is not None:
+                W = int(min(int(window), Tn)) if Tn > 0 else 1
+                x_roll = _rolling_dists(a1, n_actions_p1, W)
+                y_roll = _rolling_dists(a2, n_actions_p2, W)
+                expl_curve = np.asarray([_exploit_zero_sum(payoff.A, x_roll[i], y_roll[i]) for i in range(Tn)], dtype=float)
+            elif game_key == "almost_rock_paper_scissors" and payoff.A is not None:
+                V_star = 1.0 / 3.0
+                W = int(min(int(window), Tn)) if Tn > 0 else 1
+                x_roll = _rolling_dists(a1, n_actions_p1, W)
+                expl_curve = np.asarray(
+                    [float(V_star - float(np.min(_normalize(x_roll[i]) @ payoff.A))) for i in range(Tn)],
+                    dtype=float,
+                )
+            elif payoff.kind == "general_sum" and payoff.A is not None and payoff.B is not None:
+                W = int(min(int(window), Tn)) if Tn > 0 else 1
+                x_roll = _rolling_dists(a1, n_actions_p1, W)
+                y_roll = _rolling_dists(a2, n_actions_p2, W)
+                expl_curve = np.asarray(
+                    [_exploit_general_sum(payoff.A, payoff.B, x_roll[i], y_roll[i])["exploit_total"] for i in range(Tn)],
+                    dtype=float,
+                )
+            elif payoff.kind == "zero_sum_stochastic" and payoff.A_by_state is not None and states is not None:
+                states = np.asarray(states, dtype=int).reshape(-1)
+                W = int(min(int(window), Tn)) if Tn > 0 else 1
+                expl_curve = np.zeros(Tn, dtype=float) if Tn > 0 else np.zeros(0, dtype=float)
+                for i in range(Tn):
+                    end = i + 1
+                    start = max(0, end - W)
+                    st_win = states[start:end]
+                    total = int(st_win.size)
+                    if total <= 0:
+                        expl_curve[i] = float("nan")
+                        continue
+                    e_w = 0.0
+                    for ss in sorted(set(st_win.tolist())):
+                        idx_local = np.where(st_win == int(ss))[0]
+                        v = int(idx_local.size)
+                        if v <= 0:
+                            continue
+                        idx_global = idx_local + start
+                        xs = _empirical_dist(a1[idx_global], n_actions_p1)
+                        ys = _empirical_dist(a2[idx_global], n_actions_p2)
+                        A_s = np.asarray(payoff.A_by_state[int(ss)], dtype=float)
+                        e_w += float(_exploit_zero_sum(A_s, xs, ys)) * (float(v) / float(total))
+                    expl_curve[i] = float(e_w)
+
+            if expl_curve is None or int(expl_curve.size) == 0:
+                continue
+            idx01 = np.where(expl_curve < 0.1)[0]
+            if int(idx01.size) == 0:
+                continue
+            t_lt_01 = int(t[int(idx01[0])])
+            prev = max_t_converge_by_game.get(game_name, None)
+            if prev is None or int(t_lt_01) > int(prev):
+                max_t_converge_by_game[game_name] = int(t_lt_01)
+
+    regret_cutoff_by_game: dict[str, int] = {g: int(v) + 10 for g, v in max_t_converge_by_game.items()}
 
     rows_for_global_summary: list[dict[str, Any]] = []
     index_lines: list[str] = [
@@ -841,7 +1311,6 @@ def build_summary(results_dir: Path, out_dir: Path, *, window: int) -> None:
         "\n",
     ]
 
-    experiment_dirs = sorted([p for p in results_dir.iterdir() if p.is_dir() and p.name != "summary"], key=lambda p: p.name)
     for exp_dir in experiment_dirs:
         run_dirs = sorted([p for p in exp_dir.iterdir() if p.is_dir()], key=lambda p: p.name)
         for run_dir in run_dirs:
@@ -913,13 +1382,20 @@ def build_summary(results_dir: Path, out_dir: Path, *, window: int) -> None:
                     (out_run_dir / legacy_name).unlink()
                 except FileNotFoundError:
                     pass
-            for legacy_name in ("plot_action_proportions.png", "plot_terrain_movement.gif", "plot_switching_dominance.gif"):
+            for legacy_name in (
+                "plot_action_proportions.png",
+                "plot_terrain_movement.gif",
+                "plot_switching_dominance.gif",
+                "plot_switching_dominance_movement.gif",
+            ):
                 try:
                     (out_run_dir / legacy_name).unlink()
                 except FileNotFoundError:
                     pass
             for legacy_name in (
                 "plot_regret.png",
+                "plot_regret_mean.png",
+                "plot_regret_cumulative_limited.png",
                 "plot_joint_action_heatmap.png",
                 "action_probabilities.csv",
                 "joint_action_probabilities.csv",
@@ -1130,6 +1606,7 @@ def build_summary(results_dir: Path, out_dir: Path, *, window: int) -> None:
             )
 
             action_plot_name = "plot_action_proportions.png"
+            extra_plot_names: list[str] = []
             if game_key == "terrain_sensor":
                 action_plot_name = "plot_terrain_movement.gif"
                 n_side = int(round(math.sqrt(float(n_actions_p1))))
@@ -1155,21 +1632,21 @@ def build_summary(results_dir: Path, out_dir: Path, *, window: int) -> None:
                     title=f"TerrainGame ({exp_dir.name})",
                 )
             elif game_key == "switching_dominance":
-                action_plot_name = "plot_switching_dominance.gif"
+                action_plot_name = "plot_switching_dominance_movement.gif"
                 if payoff.A_by_state is None:
                     raise ValueError("switching_dominance: missing A_by_state payoff spec for GIF")
                 if states is None:
                     states_for_plot = np.zeros(int(t.size), dtype=int)
                 else:
                     states_for_plot = np.asarray(states, dtype=int).reshape(-1)
-                _plot_switching_dominance_gif(
+                _plot_switching_dominance_movement_gif(
                     out_run_dir / action_plot_name,
                     t,
                     a1,
                     a2,
                     states=states_for_plot,
                     A_by_state=np.asarray(payoff.A_by_state, dtype=float),
-                    title=f"SwitchingDominance ({exp_dir.name})",
+                    title=f"SwitchingDominance movement ({exp_dir.name})",
                 )
             else:
                 _plot_action_proportions(
@@ -1191,14 +1668,28 @@ def build_summary(results_dir: Path, out_dir: Path, *, window: int) -> None:
                     title=f"Exploitability: {game_name} ({exp_dir.name})",
                 )
 
+            regret_plot_names: list[str] = []
             if regret1 is not None and regret2 is not None:
                 _plot_regret(
-                    out_run_dir / "plot_regret.png",
+                    out_run_dir / "plot_regret_mean.png",
                     t,
                     regret1,
                     regret2,
-                    title=f"Regret over time: {game_name} ({exp_dir.name})",
+                    title=f"Mean regret over time: {game_name} ({exp_dir.name})",
                 )
+                regret_plot_names.append("plot_regret_mean.png")
+
+                cutoff = regret_cutoff_by_game.get(game_name, None)
+                if cutoff is not None:
+                    _plot_regret_cumulative_limited(
+                        out_run_dir / "plot_regret_cumulative_limited.png",
+                        t,
+                        regret1,
+                        regret2,
+                        title=f"Cumulative regret (t<=Tconv+10): {game_name} ({exp_dir.name})",
+                        t_max=int(cutoff),
+                    )
+                    regret_plot_names.append("plot_regret_cumulative_limited.png")
 
             final_regret_p1 = float(regret1[-1]) if regret1 is not None and int(regret1.size) > 0 else None
             final_regret_p2 = float(regret2[-1]) if regret2 is not None and int(regret2.size) > 0 else None
@@ -1250,6 +1741,10 @@ def build_summary(results_dir: Path, out_dir: Path, *, window: int) -> None:
             )
 
             rel = out_run_dir.relative_to(out_dir).as_posix()
+            plot_list = [
+                f"`{rel}/plot_payoff_running_mean.png`",
+                f"`{rel}/{action_plot_name}`",
+            ] + [f"`{rel}/{p}`" for p in extra_plot_names] + [f"`{rel}/plot_joint_action_heatmap.png`"]
             index_lines.extend(
                 [
                     f"## {exp_dir.name} / {run_dir.name}\n",
@@ -1259,9 +1754,9 @@ def build_summary(results_dir: Path, out_dir: Path, *, window: int) -> None:
                     f"- Empirical strategies: `{rel}/empirical_strategies.csv`\n",
                     f"- Action probs (CSV): `{rel}/action_probabilities.csv`\n",
                     f"- Joint move probs (CSV): `{rel}/joint_action_probabilities.csv`\n",
-                    f"- Plots: `{rel}/plot_payoff_running_mean.png`, `{rel}/{action_plot_name}`, `{rel}/plot_joint_action_heatmap.png`"
+                    f"- Plots: {', '.join(plot_list)}"
                     + (f", `{rel}/plot_exploitability.png`" if (expl_curve is not None and expl_curve.size > 0) else "")
-                    + (f", `{rel}/plot_regret.png`" if (regret1 is not None and regret2 is not None) else "")
+                    + (f", " + ", ".join(f"`{rel}/{p}`" for p in regret_plot_names) if regret_plot_names else "")
                     + "\n",
                     "\n",
                 ]

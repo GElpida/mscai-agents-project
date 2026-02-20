@@ -1,5 +1,0 @@
-action_p1,action_p1_label,action_p2,action_p2_label,prob
-0,Strategy A,0,Strategy A,0.0
-0,Strategy A,1,Strategy B,0.0
-1,Strategy B,0,Strategy A,1.0
-1,Strategy B,1,Strategy B,0.0
