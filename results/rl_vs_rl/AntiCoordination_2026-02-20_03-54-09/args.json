@@ -1,0 +1,14 @@
+{
+  "algo": "independent_q_selfplay",
+  "alpha": 0.2,
+  "eps": 0.1,
+  "gamma": 0.95,
+  "only": null,
+  "seed": 0,
+  "steps": 5000,
+  "switch_p": 0.2,
+  "terrain_fog": 0.25,
+  "terrain_k_diff": 0.9,
+  "terrain_k_height": 1.0,
+  "terrain_n": 4
+}

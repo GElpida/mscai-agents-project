@@ -1,0 +1,7 @@
+player,action,action_label,prob
+P1,0,Rock,0.1676
+P1,1,Paper,0.531
+P1,2,Scissors,0.3014
+P2,0,Rock,0.4484
+P2,1,Paper,0.206
+P2,2,Scissors,0.3456

@@ -1,0 +1,5 @@
+player,action,action_label,prob
+P1,0,A0,0.4786
+P1,1,A1,0.5214
+P2,0,A0,0.485
+P2,1,A1,0.515

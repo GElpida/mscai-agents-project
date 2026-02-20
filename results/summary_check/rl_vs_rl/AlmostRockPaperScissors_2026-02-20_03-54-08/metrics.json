@@ -1,0 +1,22 @@
+{
+  "experiment": "rl_vs_rl",
+  "run": "AlmostRockPaperScissors_2026-02-20_03-54-08",
+  "game_name": "AlmostRockPaperScissors",
+  "game_key": "almost_rock_paper_scissors",
+  "n_rounds": 5000,
+  "window": 500,
+  "state_source": "csv",
+  "payoff_total_p1": 2446.0,
+  "payoff_total_p2": 1824.0,
+  "payoff_mean_p1": 0.4892,
+  "payoff_mean_p2": 0.3648,
+  "entropy_p1": 1.0968014390284067,
+  "entropy_p2": 1.0963048280806476,
+  "final_regret_p1": -332.76416837335796,
+  "final_regret_p2": 247.22420257689993,
+  "exploitability_kind": "rps_vstar_minus_best_response",
+  "exploitability_final": 0.02573333333333333,
+  "t_exploit_lt_0_10": 699,
+  "t_exploit_lt_0_05": 872,
+  "notes": null
+}

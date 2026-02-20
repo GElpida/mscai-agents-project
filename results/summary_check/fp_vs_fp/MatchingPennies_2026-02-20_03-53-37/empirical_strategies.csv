@@ -1,0 +1,5 @@
+player,action,action_label,prob
+P1,0,Heads,0.4908
+P1,1,Tails,0.5092
+P2,0,Heads,0.501
+P2,1,Tails,0.499

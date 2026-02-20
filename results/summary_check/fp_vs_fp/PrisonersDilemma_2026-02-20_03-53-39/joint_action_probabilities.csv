@@ -1,0 +1,5 @@
+action_p1,action_p1_label,action_p2,action_p2_label,prob
+0,Cooperate,0,Cooperate,0.0
+0,Cooperate,1,Defect,0.0
+1,Defect,0,Cooperate,0.0
+1,Defect,1,Defect,1.0

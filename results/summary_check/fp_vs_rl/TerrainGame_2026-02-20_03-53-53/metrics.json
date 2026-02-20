@@ -1,0 +1,22 @@
+{
+  "experiment": "fp_vs_rl",
+  "run": "TerrainGame_2026-02-20_03-53-53",
+  "game_name": "TerrainGame",
+  "game_key": "terrain_sensor",
+  "n_rounds": 5000,
+  "window": 500,
+  "state_source": "csv",
+  "payoff_total_p1": 5000.0,
+  "payoff_total_p2": -5000.0,
+  "payoff_mean_p1": 1.0,
+  "payoff_mean_p2": -1.0,
+  "entropy_p1": -0.0,
+  "entropy_p2": 2.9957298735475906,
+  "final_regret_p1": -0.551385431929075,
+  "final_regret_p2": 1.2247994743724402,
+  "exploitability_kind": "zero_sum_minimax_gap",
+  "exploitability_final": 9.409844027108427e-05,
+  "t_exploit_lt_0_10": 1,
+  "t_exploit_lt_0_05": 1,
+  "notes": null
+}

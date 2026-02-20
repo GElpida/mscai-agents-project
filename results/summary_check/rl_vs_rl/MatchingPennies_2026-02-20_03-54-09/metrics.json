@@ -1,0 +1,22 @@
+{
+  "experiment": "rl_vs_rl",
+  "run": "MatchingPennies_2026-02-20_03-54-09",
+  "game_name": "MatchingPennies",
+  "game_key": "matching_pennies",
+  "n_rounds": 5000,
+  "window": 500,
+  "state_source": "csv",
+  "payoff_total_p1": -82.0,
+  "payoff_total_p2": 82.0,
+  "payoff_mean_p1": -0.0164,
+  "payoff_mean_p2": 0.0164,
+  "entropy_p1": 0.693031656111244,
+  "entropy_p2": 0.6931407005459485,
+  "final_regret_p1": 114.87204907286836,
+  "final_regret_p2": 11.075574902474894,
+  "exploitability_kind": "zero_sum_minimax_gap",
+  "exploitability_final": 0.018800000000000094,
+  "t_exploit_lt_0_10": 8,
+  "t_exploit_lt_0_05": 8,
+  "notes": null
+}
